@@ -51,17 +51,39 @@ Sarah
 </main><div id="toast" class="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <script>
-const GAS_API_URL="https://script.google.com/macros/s/AKfycbytg6zzT2lGkYORrcsvpFH5PZ5BC9gUCwppmPf4qDf_JaxB8IFtflArSpkmk0XyGijltg/exec",CREATED_BY="Mbah Pri",$=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const GAS_API_ENDPOINTS=[
+  "https://script.google.com/macros/s/AKfycbytg6zzT2lGkYORrcsvpFH5PZ5BC9gUCwppmPf4qDf_JaxB8IFtflArSpkmk0XyGijltg/exec"
+],CREATED_BY="Mbah Pri",$=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+let activeApiBase='';
+try{activeApiBase=localStorage.getItem('vacsApiBase')||''}catch(e){}
+function apiBases(){const a=[];if(activeApiBase)a.push(activeApiBase);GAS_API_ENDPOINTS.forEach(x=>{if(!a.includes(x))a.push(x)});return a}
+function setApiBase(base){activeApiBase=base;try{localStorage.setItem('vacsApiBase',base)}catch(e){}}
 let selected=null,lastReport=null,authCache=[];let serverOnline=false;
 const TYPES=['VISITOR','CONTRACTOR','VENDOR','EMPLOYEE','EMERGENCY VEHICLE','DELIVERY','TEMPORARY VEHICLE','VIP','STAFF','TENANT','SECURITY','SUPPORT PARTNER'];
 function accessTypeNorm(v){const t=String(v??'').trim().replace(/\s+/g,' ').toUpperCase();if(!t)return'VISITOR';if(t==='SP'||t==='SUPPORTPARTNER')return'SUPPORT PARTNER';return t}
 const IDB={name:'vacs_offline_v2',queue:'queue',master:'master',meta:'meta'};
 function toast(t){const x=$('toast');x.textContent=t;x.classList.add('show');clearTimeout(window.__t);window.__t=setTimeout(()=>x.classList.remove('show'),3500)}
-function apiOnce_(p,t){return new Promise((res,rej)=>{const cb='vacs_'+Date.now()+'_'+Math.random().toString(36).slice(2),s=document.createElement('script');let done=0;const fin=(f,v)=>{if(done)return;done=1;delete window[cb];s.remove();f(v)};window[cb]=d=>fin(res,d);s.onerror=()=>fin(rej,Error('net'));s.src=GAS_API_URL+'?'+new URLSearchParams({...p,callback:cb,_t:Date.now()});document.body.appendChild(s);setTimeout(()=>fin(rej,Error('timeout')),t)})}
-function api(p,timeout=12000,retries=2){return new Promise((res,rej)=>{const attempt=n=>{apiOnce_(p,timeout).then(res).catch(()=>{if(n<retries){setTimeout(()=>attempt(n+1),500)}else{rej(Error(navigator.onLine===false?'Tidak ada koneksi internet':'Gagal menghubungi Apps Script — coba REFRESH'))}})};attempt(1)})}
-async function call(p,t=20000){let e;for(let i=0;i<2;i++)try{return await api(p,t)}catch(x){e=x;await new Promise(r=>setTimeout(r,600))}throw e}
+function apiOnce_(base,p,t){return new Promise((res,rej)=>{const cb='vacs_'+Date.now()+'_'+Math.random().toString(36).slice(2),s=document.createElement('script');let done=0;const fin=(f,v)=>{if(done)return;done=1;delete window[cb];s.remove();f(v)};window[cb]=d=>fin(res,d);s.onerror=()=>fin(rej,Error('net'));s.src=base+'?'+new URLSearchParams({...p,callback:cb,_t:Date.now()});document.body.appendChild(s);setTimeout(()=>fin(rej,Error('timeout')),t)})}
+async function api(p,timeout=12000,retries=1){
+  const bases=apiBases();let lastErr=null;
+  for(const base of bases){
+    for(let n=0;n<=retries;n++){
+      try{
+        const r=await apiOnce_(base,p,timeout);
+        if(r&&r.ok===true){setApiBase(base);return r}
+        if(r&&r.ok===false){
+          if(String(p.action||'')==='health') {lastErr=Error(r.message||'Backend health failed');break}
+          return r;
+        }
+        lastErr=Error('Respons Apps Script tidak valid');break;
+      }catch(e){lastErr=e;if(n<retries)await new Promise(r=>setTimeout(r,350))}
+    }
+  }
+  throw lastErr||Error(navigator.onLine===false?'Tidak ada koneksi internet':'Gagal menghubungi Apps Script');
+}
+async function call(p,t=20000){return api(p,t,1)}
 function online(v){if(arguments.length){serverOnline=!!v;$('status').textContent=serverOnline?'● ONLINE':'● OFFLINE';$('status').classList.toggle('online',serverOnline)}return serverOnline}
-async function health(){try{const r=await call({action:'health'},12000);if(!r.ok)throw Error(r.message);online(true);return true}catch(e){online(false);return false}}
+async function health(){try{const r=await api({action:'health'},9000,0);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){online(false);return false}}
 function localISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function makeEventId(){try{if(window.crypto?.randomUUID)return 'EVT-'+window.crypto.randomUUID()}catch(e){}return 'EVT-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,10).toUpperCase()}
 function fmtTime(v){const s=String(v??'').trim();if(!s)return s;if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)){const d=new Date(s);if(!isNaN(d))return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Jakarta'})}const m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);if(m)return `${String(m[1]).padStart(2,'0')}:${m[2]}`;return s}
