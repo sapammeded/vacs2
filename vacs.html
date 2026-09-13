@@ -67,6 +67,27 @@ function fmtTime(v){const s=String(v??'').trim();if(!s)return s;if(/^\d{4}-\d{2}
 const TYPE_COLORS={VISITOR:'#22c55e',CONTRACTOR:'#3b82f6',VENDOR:'#f97316',EMPLOYEE:'#8b5cf6','EMERGENCY VEHICLE':'#ef4444',DELIVERY:'#eab308','TEMPORARY VEHICLE':'#22d3ee',VIP:'#92400e'};
 function typeClass(t){return 'cat'+String(t||'').replace(/[^A-Za-z]/g,'').replace(/^./,c=>c.toUpperCase())}
 async function dash(){try{if(!$('dashDate').value)$('dashDate').value=localISO();const type=$('dashType').value||'ALL';const r=await call({action:'commandCenter',date:$('dashDate').value,type},30000);if(!r.ok)throw Error(r.message||'Command Center gagal dimuat.');const d=r.data||{},ss=d.summary||{};mergeAccessTypeOptions(d.accessTypes||Object.keys(d.byType||{}));$('vehicles').textContent=d.vehicles??'—';$('owners').textContent=d.owners??'—';$('todayIn').textContent=ss.totalIn??0;$('todayOut').textContent=ss.totalOut??0;$('inside').textContent=ss.totalInside??0;$('openingInside').textContent=ss.openingInside??0;const bt=d.byType||{};const keys=Object.keys(bt).sort();$('categoryDashboard').innerHTML=keys.map(t=>{const c=bt[t]||{};return `<div class="stat categoryCard ${typeClass(t)}"><b>${Number(c.inside||0)}</b><span>${esc(t)}</span><div class="ccAccessMeta">MASTER ${Number(c.master||0)} • IN ${Number(c.in||0)} • OUT ${Number(c.out||0)}</div></div>`}).join('')||'<div class="empty">Belum ada Access Type pada Master / transaksi tanggal ini.</div>'}catch(e){toast('❌ Dashboard gagal dimuat: '+(e.message||e))}}
+async function commandCenter(){try{
+  if(!$('ccDate').value)$('ccDate').value=localISO();
+  const type=$('ccType').value||'ALL';
+  const r=await call({action:'commandCenter',date:$('ccDate').value,type},30000);
+  if(!r.ok)throw Error(r.message||'Command Center gagal dimuat.');
+  const d=r.data||{},ss=d.summary||{},bt=d.byType||{};
+  mergeAccessTypeOptions(d.accessTypes||Object.keys(bt));
+  $('ccInside').textContent=d.inside?.total??ss.totalInside??0;
+  $('ccExpected').textContent=d.expected??0;
+  $('ccUnexpected').textContent=(d.unexpectedVehicles||[]).length??0;
+  $('ccAlerts').textContent=d.openAlerts??0;
+  const keys=Object.keys(bt).sort((a,b)=>a.localeCompare(b));
+  $('ccAccessType24h').innerHTML=keys.map(t=>{const c=bt[t]||{};return `<div class="stat categoryCard ${typeClass(t)}"><b>${Number(c.total24h??c.in??0)}</b><span>${esc(t)}</span><div class="ccAccessMeta">MASTER ${Number(c.master||0)} • INSIDE ${Number(c.inside||0)} • IN ${Number(c.in||0)} • OUT ${Number(c.out||0)}</div></div>`}).join('')||'<div class="empty">Belum ada Access Type pada Master / transaksi tanggal ini.</div>';
+  $('ccAccessTypeTotal').textContent='TOTAL: '+Number(d.total24h??Object.values(bt).reduce((a,c)=>a+Number(c?.total24h??c?.in??0),0));
+  const gates=d.gates||[];
+  $('gateStatus').className=gates.length?'tablewrap':'empty';
+  $('gateStatus').innerHTML=gates.length?'<table class="table"><tr><th>Gate</th><th>Status</th><th>IN</th><th>OUT</th></tr>'+gates.map(g=>`<tr><td>${esc(g.gateName||g.gateId)}</td><td><span class="pill ${g.active?'pgreen':'pred'}">${g.active?'ACTIVE':'INACTIVE'}</span></td><td>${Number(g.todayIn||0)}</td><td>${Number(g.todayOut||0)}</td></tr>`).join('')+'</table>':'Tidak ada gate.';
+  const la=d.lastAccess||[];
+  $('lastAccess').className=la.length?'tablewrap':'empty';
+  $('lastAccess').innerHTML=la.length?'<table class="table"><tr><th>Waktu</th><th>Person</th><th>Plate</th><th>Access Type</th><th>Direction</th><th>Gate</th><th>Device</th></tr>'+la.map(x=>`<tr><td>${esc(fmtTime(x.timestamp))}</td><td>${esc(x.person)}</td><td>${esc(x.plate)}</td><td>${esc(x.type)}</td><td>${esc(x.direction)}</td><td>${esc(x.gateName)}</td><td>${esc(x.device)}</td></tr>`).join('')+'</table>':'Belum ada akses pada tanggal tersebut.';
+ }catch(e){toast('❌ Command Center gagal dimuat: '+(e.message||e))}}
 
 function show(v){selected=v;$('profile').classList.toggle('show',!!v);$('inBtn').disabled=$('outBtn').disabled=!v;if(v){$('plate').textContent=v.plate;$('owner').textContent=v.name||'Nama belum diisi';$('meta').textContent=v.division||'Bagian/Divisi belum diisi';$('vehicle').textContent=[v.type,v.model,v.color].filter(Boolean).join(' • ')||'Profil belum lengkap'}}
 async function search(){const q=$('search').value.trim();$('result').textContent='';$('result').className='result';if(!q){show(null);return}try{const r=await call({action:'search',q});const a=r.data.found||[];if(!a.length){show(null);$('result').textContent='🚫 KENDARAAN TIDAK TERDAFTAR';$('result').className='result show err';return}show(a[0]);$('result').textContent='✓ Kendaraan terdaftar';$('result').className='result show ok'}catch(e){$('result').textContent='❌ '+e.message;$('result').className='result show err'}}
