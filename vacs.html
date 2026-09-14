@@ -82,8 +82,8 @@ async function api(p,timeout=12000,retries=1){
   throw lastErr||Error(navigator.onLine===false?'Tidak ada koneksi internet':'Gagal menghubungi Apps Script');
 }
 async function call(p,t=20000){return api(p,t,1)}
-function online(v){if(arguments.length){serverOnline=!!v;$('status').textContent=serverOnline?'● ONLINE':'● OFFLINE';$('status').classList.toggle('online',serverOnline)}return serverOnline}
-async function health(){try{const r=await api({action:'health'},9000,0);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){online(false);return false}}
+function online(v){if(arguments.length){serverOnline=!!v;$('status').textContent=serverOnline?'● READY • SERVER ONLINE':'● READY • LOCAL MODE';$('status').classList.toggle('online',serverOnline);$('status').style.background=serverOnline?'#145b3b':'#8a4b00'}return serverOnline}
+async function health(){try{const r=await api({action:'health'},20000,2);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){online(false);return false}}
 function localISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function makeEventId(){try{if(window.crypto?.randomUUID)return 'EVT-'+window.crypto.randomUUID()}catch(e){}return 'EVT-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,10).toUpperCase()}
 function fmtTime(v){const s=String(v??'').trim();if(!s)return s;if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)){const d=new Date(s);if(!isNaN(d))return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Jakarta'})}const m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);if(m)return `${String(m[1]).padStart(2,'0')}:${m[2]}`;return s}
@@ -209,38 +209,9 @@ el.querySelectorAll('.vehicleCheck').forEach(c=>c.addEventListener('change',()=>
 function syncVehicleSelection(items){selectedVehicles=[...$('result').querySelectorAll('.vehicleCheck')].filter(c=>c.checked).map(c=>items[Number(c.dataset.index)]).filter(Boolean);selected=selectedVehicles[0]||null;showVehicle(selected);$('result').classList.add('show');const checked=selectedVehicles.length;$('inBtn').textContent=checked?`✓ VEHICLE IN (${checked})`:'✓ VEHICLE IN';$('outBtn').textContent=checked?`↗ VEHICLE OUT (${checked})`:'↗ VEHICLE OUT';}
 let searchDebounceT=null,searchReqSeq=0;
 function splitVehicleQueries(raw){return String(raw||'').split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean).filter((x,i,a)=>a.findIndex(y=>y.toUpperCase()===x.toUpperCase())===i)}
-function searchVehicle(){clearTimeout(searchDebounceT);searchDebounceT=setTimeout(searchVehicleNow,280)}
-async function searchVehicleNow(){
- const queries=splitVehicleQueries($('search').value);const mySeq=++searchReqSeq;
- if(!queries.length){selectedVehicles=[];showVehicle(null);$('result').className='result';$('result').textContent='';return}
- const local=async()=>{const all=[];const seen=new Set();for(const q of queries){const d=await offlineMasterSearch(q);for(const v of (d.found||[])){const k=String(v.plate||'').trim().toUpperCase();if(k&&!seen.has(k)){seen.add(k);all.push(v)}}}if(mySeq===searchReqSeq)renderVehicleResults(all,queries)};
- if(online()){
-  try{const results=await Promise.all(queries.map(async q=>{const d=await call({action:'search',q});if(d&&d.ok===false)throw Error(d.message||'Pencarian gagal');return{q,found:d.data?.found||[]}}));
-   if(mySeq!==searchReqSeq)return;const items=[],seen=new Set();results.forEach(r=>r.found.forEach(v=>{const k=String(v.plate||'').trim().toUpperCase();if(k&&!seen.has(k)){seen.add(k);items.push(v)}}));renderVehicleResults(items,queries);
-  }catch(e){online(false);try{await local()}catch(_){setResult('result','❌ Pencarian gagal dan Local Master belum tersedia.','err')}}
- }else{try{await local()}catch(_){setResult('result','⚠️ OFFLINE — LOCAL MASTER BELUM TERSEDIA.','warn')}}
-}
-async function gateAccess(act){
- const list=selectedVehicles.slice();if(!list.length)return;const b1=$('inBtn'),b2=$('outBtn');b1.disabled=b2.disabled=true;
- const gateLabel=($('gateSelect').selectedOptions[0]?.textContent)||'GATE';const results=[];
- try{for(let i=0;i<list.length;i++){const v=list[i];setResult('result',`⏳ ${act} ${i+1}/${list.length} • ${v.plate}`,'warn');
-   const payload={action:'access',plate:v.plate,activity:act,gateId:$('gateSelect').value,device:$('deviceId').value.trim()||device(),notes:$('gateNotes')?.value||'',localTimestamp:new Date().toISOString(),eventId:makeEventId()};
-   try{
-     if(!online())throw Error('TRANSPORT_OFFLINE');
-     const d=await call(payload,20000);if(d&&d.ok===false)throw Error(d.message||'Transaksi ditolak server');
-     const dd=d.data||{};results.push({plate:v.plate,ok:true,message:dd.duplicate?`${act} SUDAH TERCATAT`:`${act} BERHASIL`});
-   }catch(e){
-     const msg=String(e?.message||e||'');
-     const business=/KENDARAAN MASIH DI DALAM|TIDAK ADA IN AKTIF|TRANSAKSI DITOLAK|KENDARAAN TIDAK TERDAFTAR|DUPLICATE_IN|NO_ACTIVE_IN/i.test(msg);
-     if(!business){online(false);try{await queueAdd({eventId:payload.eventId,kind:'gate',localTimestamp:payload.localTimestamp,payload});results.push({plate:v.plate,ok:true,queued:true,message:`${act} QUEUED OFFLINE`})}catch(qe){results.push({plate:v.plate,ok:false,message:'Gagal menyimpan transaksi offline: '+(qe.message||qe)})}}
-     else results.push({plate:v.plate,ok:false,message:msg});
-   }
- }
- const ok=results.filter(x=>x.ok&&!x.queued).length,queued=results.filter(x=>x.queued).length,bad=results.filter(x=>!x.ok).length;
- const summary=results.map(x=>`<div class="batchResult ${x.ok?(x.queued?'warn':'ok'):'err'}"><b>${x.ok?(x.queued?'⏳':'✓'):'🚫'} ${esc(x.plate)}</b><span>${esc(x.message)}</span></div>`).join('');
- $('result').innerHTML=`<div class="multiSearchHead"><b>${act} SELESAI • ${ok} BERHASIL${queued?`, ${queued} PENDING`:''}${bad?`, ${bad} DITOLAK`:''}</b><span>${gateLabel}</span></div><div class="batchResults">${summary}</div>`;$('result').className='result show '+(bad?'warn':queued?'warn':'ok');
- if(online())try{await syncQueue()}catch(_){}}
- catch(e){setResult('result','🚫 '+(e.message||e),'err')}finally{b1.disabled=b2.disabled=false;updateGateButtons()}}
+function searchVehicle(){clearTimeout(searchDebounceT);searchDebounceT=setTimeout(searchVehicleNow,120)}
+async function searchVehicleNow(){const queries=splitVehicleQueries($('search').value);const mySeq=++searchReqSeq;if(!queries.length){selectedVehicles=[];showVehicle(null);$('result').className='result';$('result').textContent='';return}const local=async()=>{const all=[];const seen=new Set();for(const q of queries){const d=await offlineMasterSearch(q);for(const v of(d.found||[])){const k=String(v.plate||'').trim().toUpperCase();if(k&&!seen.has(k)){seen.add(k);all.push(v)}}}if(mySeq===searchReqSeq)renderVehicleResults(all,queries);return all};try{const localItems=await local();if(localItems.length)return}catch(_){}if(serverOnline){try{const results=await Promise.all(queries.map(async q=>{const d=await call({action:'search',q});if(d&&d.ok===false)throw Error(d.message||'Pencarian gagal');return{q,found:d.data?.found||[]}}));if(mySeq!==searchReqSeq)return;const items=[],seen=new Set();results.forEach(r=>r.found.forEach(v=>{const k=String(v.plate||'').trim().toUpperCase();if(k&&!seen.has(k)){seen.add(k);items.push(v)}}));renderVehicleResults(items,queries)}catch(e){online(false);try{await local()}catch(_){}}}else{try{await local()}catch(_){setResult('result','⚠️ MASTER BELUM TERSEDIA DI DEVICE.','warn')}}}
+async function gateAccess(act){const list=selectedVehicles.slice();if(!list.length)return;const b1=$('inBtn'),b2=$('outBtn');b1.disabled=b2.disabled=true;const gateLabel=($('gateSelect').selectedOptions[0]?.textContent)||'GATE';const results=[];try{for(let i=0;i<list.length;i++){const v=list[i];setResult('result',`⏳ ${act} ${i+1}/${list.length} • ${v.plate}`,'warn');const payload={action:'access',plate:v.plate,activity:act,gateId:$('gateSelect').value,device:$('deviceId').value.trim()||device(),notes:$('gateNotes')?.value||'',localTimestamp:new Date().toISOString(),eventId:makeEventId()};try{await queueAdd({eventId:payload.eventId,kind:'gate',localTimestamp:payload.localTimestamp,payload});results.push({plate:v.plate,ok:true,queued:true,message:`${act} TERSIMPAN • SYNC OTOMATIS`})}catch(e){results.push({plate:v.plate,ok:false,message:'Gagal menyimpan transaksi lokal: '+(e.message||e)})}}const ok=results.filter(x=>x.ok&&!x.queued).length,queued=results.filter(x=>x.queued).length,bad=results.filter(x=>!x.ok).length;const summary=results.map(x=>`<div class="batchResult ${x.ok?(x.queued?'warn':'ok'):'err'}"><b>${x.ok?(x.queued?'⏳':'✓'):'🚫'} ${esc(x.plate)}</b><span>${esc(x.message)}</span></div>`).join('');$('result').innerHTML=`<div class="multiSearchHead"><b>${act} SELESAI • ${ok} BERHASIL${queued?`, ${queued} TERSIMPAN`:''}${bad?`, ${bad} DITOLAK`:''}</b><span>${gateLabel}</span></div><div class="batchResults">${summary}</div>`;$('result').className='result show '+(bad?'warn':queued?'warn':'ok');if(serverOnline)syncQueue().catch(()=>{})}catch(e){setResult('result','🚫 '+(e.message||e),'err')}finally{b1.disabled=b2.disabled=false;updateGateButtons()}}
 function populateGates(gs){const opts=(gs||[]).filter(g=>g.active!==false);['gateSelect','aGate','xGate'].forEach(id=>{const s=$(id);s.innerHTML='<option value="ALL">ALL / DEFAULT</option>'+opts.map(g=>`<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('')})}
 async function loadGates(){try{const d=await call({action:'gates'});populateGates(d.data?.gates||[])}catch(e){populateGates([])}}
 function mergeAccessTypeOptions(values){
@@ -318,6 +289,7 @@ $('exportReport')?.addEventListener('click',exportReport);
 $('printReport')?.addEventListener('click',printReport);
 }
 try{initTypes();if($('dashDate'))$('dashDate').value=localISO();if($('ccDate'))$('ccDate').value=localISO();if($('rDate'))$('rDate').value=localISO();if($('aFrom'))$('aFrom').value=localISO();if($('aUntil'))$('aUntil').value=localISO();if($('deviceId'))$('deviceId').value=localStorage.getItem('vacsDeviceId')||'';bind();loadGates();}catch(e){console.error('VACS UI initialization failed:',e);toast('❌ UI gagal diinisialisasi: '+e.message)}
-(async()=>{const ok=await health();if(ok){/* ONLINE = GS health succeeded; immediately hydrate this device's Master cache from Spreadsheet via masterVehicles. */await syncMasterCache();await dash();try{await refreshAuth();await syncQueue()}catch(e){}}else{authCache=JSON.parse(localStorage.getItem('vacsAuthCache')||'[]');renderAuth();online(false);await syncMasterCache()}})();
-window.addEventListener('online',async()=>{if(await health()){await syncMasterCache();await syncQueue();await dash();await commandCenter()}});
+let __vacsReconnectBusy=false,__vacsReconnectDelay=15000;async function __vacsRecover(){if(__vacsReconnectBusy)return;__vacsReconnectBusy=true;try{const ok=await health();if(ok){__vacsReconnectDelay=15000;await syncMasterCache();await syncQueue();await dash();try{await commandCenter()}catch(e){}}else __vacsReconnectDelay=Math.min(__vacsReconnectDelay*2,120000)}finally{__vacsReconnectBusy=false;setTimeout(__vacsRecover,__vacsReconnectDelay)}}
+(async()=>{const ok=await health();if(ok){await syncMasterCache();await dash();try{await refreshAuth();await syncQueue()}catch(e){}}else{authCache=JSON.parse(localStorage.getItem('vacsAuthCache')||'[]');renderAuth();await syncMasterCache()}setTimeout(__vacsRecover,__vacsReconnectDelay)})();
+window.addEventListener('online',()=>{__vacsReconnectDelay=15000;__vacsRecover()});
 </script></body></html>
