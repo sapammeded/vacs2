@@ -52,7 +52,7 @@ Sarah
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 <script>
 const GAS_API_ENDPOINTS=[
-  "https://script.google.com/macros/s/AKfycbwf95d_SqbgGzPJQ0hF_jw7B9hY9BybGnVMX7bmLPj_sdWAAqn6RSibnE4DpZ-HRhzo/exec"
+  "https://script.google.com/macros/s/AKfycbzfcrmyzOetBm1r25HH5sCAn5R-ysyqAJTaObXq-MncdWLmJz_kN9l209pT2eYbxA/exec"
 ],CREATED_BY="Mbah Pri",$=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 let activeApiBase='';
 try{activeApiBase=localStorage.getItem('vacsApiBase')||''}catch(e){}
@@ -78,7 +78,7 @@ async function api(p,timeout=12000,retries=1){
 }
 async function call(p,t=20000){return api(p,t,1)}
 function online(v){if(arguments.length){serverOnline=!!v;$('status').textContent=serverOnline?'● READY • SERVER ONLINE':'● READY • LOCAL MODE';$('status').classList.toggle('online',serverOnline);$('status').style.background=serverOnline?'#145b3b':'#8a4b00'}return serverOnline}
-async function health(){try{const r=await api({action:'health'},10000,1);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){if(!serverOnline)online(false);return false}}
+async function health(){try{const r=await api({action:'health'},20000,1);if(!r.ok||!r.data||String(r.data.status||'').toUpperCase()!=='ONLINE')throw Error(r.message||'Backend tidak ONLINE');online(true);return true}catch(e){if(!serverOnline)online(false);return false}}
 function localISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function makeEventId(){try{if(window.crypto?.randomUUID)return 'EVT-'+window.crypto.randomUUID()}catch(e){}return 'EVT-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,10).toUpperCase()}
 function fmtTime(v){const s=String(v??'').trim();if(!s)return s;if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)){const d=new Date(s);if(!isNaN(d))return d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Jakarta'})}const m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);if(m)return `${String(m[1]).padStart(2,'0')}:${m[2]}`;return s}
